@@ -1,0 +1,78 @@
+blueprint:
+  name: "카운터 센서 동기화: input_number ↔ number"
+  description: "input_number(box모드로 만든 센서)와 number 엔티티를 서로 동기화합니다. (값이 다를 때만 동기화, debounce 시간 설정 가능, 무한 루프 방지)"
+  domain: automation
+  input:
+    input_number_entity:
+      name: "Input Number 엔티티"
+      description: "동기화할 input_number 엔티티를 선택하세요.(사용자가 사전에 직접 생성 또는 도우미로 생성 필요)"
+      selector:
+        entity:
+          domain: input_number
+
+    number_entity:
+      name: "Number 엔티티"
+      description: "동기화할 number 엔티티를 선택하세요."
+      selector:
+        entity:
+          domain: number
+
+    debounce_seconds:
+      name: "Debounce 시간 (초)"
+      description: "변경 후 몇 초 동안 값이 유지되어야 동기화할지 설정합니다. (권장 2초) "
+      default: 2
+      selector:
+        number:
+          min: 0
+          max: 60
+          unit_of_measurement: seconds
+          mode: slider
+
+trigger:
+  - platform: state
+    entity_id: !input input_number_entity
+    id: 직접변경
+    for:
+      seconds: !input debounce_seconds
+
+  - platform: state
+    entity_id: !input number_entity
+    id: 자동변경
+    for:
+      seconds: !input debounce_seconds
+
+condition: []
+
+action:
+  - variables:
+      input_number_entity_ref: !input input_number_entity  # input_number 엔티티 참조
+      number_entity_ref: !input number_entity  # number 엔티티 참조
+      input_value: "{{ states(input_number_entity_ref) | float(0) }}"  # input_number 엔티티 값 처리
+      number_value: "{{ states(number_entity_ref) | int(0) }}"  # number 엔티티 값 처리
+
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: 직접변경
+          - condition: template
+            value_template: "{{ input_value != number_value }}"
+        sequence:
+          - service: number.set_value
+            target:
+              entity_id: !input number_entity
+            data:
+              value: "{{ input_value | int(0) }}"  # float 값을 int로 변환하여 number 엔티티에 설정
+
+      - conditions:
+          - condition: trigger
+            id: 자동변경
+          - condition: template
+            value_template: "{{ input_value != number_value }}"
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: !input input_number_entity
+            data:
+              value: "{{ number_value | float(0) }}"  # int 값을 float으로 변환하여 input_number 엔티티에 설정
+
+mode: single
